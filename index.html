@@ -44,6 +44,7 @@ button,input,select,textarea{font:inherit;color:inherit}
 .hero{color:#fff;padding:28px 4px 22px}
 .hero h1{font-family:var(--display);font-weight:400;font-size:clamp(38px,10vw,64px);line-height:1;margin:0 0 14px;letter-spacing:-.5px}
 .hero p{margin:12px 0 0;color:#C9D3E6;font-size:18px}
+.hero p.subline{font-family:var(--display);font-size:clamp(22px,6vw,28px);line-height:1.3;color:#fff;margin-top:16px}
 .hero .lanes{max-width:260px}
 .card{background:var(--paper);border-radius:var(--radius);padding:22px;box-shadow:0 18px 40px rgba(0,0,0,.35)}
 .field{margin-bottom:14px}
@@ -223,7 +224,7 @@ button,input,select,textarea{font:inherit;color:inherit}
 const CONFIG = {
   // הדביקו כאן את כתובת ה-Web App של Google Apps Script (מסתיימת ב- /exec)
   API_URL: "https://script.google.com/macros/s/AKfycbwrVqW90gommEEgn6fyuG3ew343PTn0TBtJzL8dOWs9rrUYOmUXecSGRVelis_H2tHJcA/exec",
-  SCHOOL_LINE: "מבחן בחינוך גופני, שכבת י'",
+  SCHOOL_LINE: "מבחן בחינוך גופני, שכבת י' - תשפ\"ז",
   CLASSES: ["י'1","י'2","י'3","י'4","י'5","י'6","י'7","י'8","י'9","י'10","י'11","י'12","י'13"],
   TEACHERS: ["עומר קדם","דנה וקנין","סיגל וינטרוב","ליאת פינגולד","אסף רוזן","יוסי גול","שיר זיסו","בני מאיר"]
 };
@@ -281,7 +282,7 @@ function renderLogin(error){
       ${brand(72)}
       <h1>המשחקים<br>האולימפיים</h1>
       <div class="lanes" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
-      <p>${esc(CONFIG.SCHOOL_LINE)}</p>
+      <p class="subline">${esc(CONFIG.SCHOOL_LINE)}</p>
     </header>
     <form class="card" id="loginForm" novalidate>
       ${DEMO ? `<div class="demo">מצב תצוגה: עדיין לא חובר שרת, התשובות לא נשמרות. כל ת.ז תקינה וכל סיסמה יעבדו.</div>` : ""}
