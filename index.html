@@ -111,7 +111,10 @@ button,input,select,textarea{font:inherit;color:inherit}
 .bottombar{position:fixed;inset-inline:0;bottom:0;background:var(--paper);border-top:1px solid var(--rule);padding:10px 16px calc(10px + env(safe-area-inset-bottom));z-index:6}
 .bottombar .in{max-width:720px;margin:0 auto;display:flex;gap:10px;align-items:center}
 .bottombar .btn{flex:1;padding:12px 10px}
-.navbtn{flex:0 0 auto !important;background:var(--night)}
+.bottombar .btn.navbtn{flex:1.25;background:var(--night);font-size:17px;white-space:nowrap}
+.gridic{display:inline-grid;grid-template-columns:7px 7px;gap:2px}
+.gridic i{width:7px;height:7px;border-radius:2px;background:#fff}
+@media (max-width:360px){.bottombar .btn{font-size:15px;padding-inline:6px}.gridic{display:none}}
 
 /* מפת שאלות */
 .sheet{position:fixed;inset:0;background:rgba(5,12,26,.6);z-index:10;display:flex;align-items:flex-end;justify-content:center}
@@ -120,12 +123,14 @@ button,input,select,textarea{font:inherit;color:inherit}
 .sheet h3{font-family:var(--display);font-weight:400;font-size:24px;margin:0 0 6px}
 .grid-part{margin:14px 0 4px;font-weight:700;color:var(--muted);font-size:15px}
 .qgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(44px,1fr));gap:8px}
-.qgrid button{height:44px;border-radius:10px;border:2px solid var(--rule);background:#fff;font-weight:700;cursor:pointer}
+.qgrid button{display:flex;align-items:center;justify-content:center;height:46px;padding:0;margin:0;line-height:1;font-size:18px;border-radius:10px;border:2px solid #C9D2E0;background:#fff;color:var(--ink);font-weight:700;cursor:pointer;font-variant-numeric:tabular-nums}
 .qgrid button.done{background:var(--green);border-color:var(--green);color:#fff}
-.qgrid button.cur{border-color:var(--blue);box-shadow:0 0 0 2px var(--blue) inset}
+.qgrid button.cur{border-color:var(--blue);box-shadow:0 0 0 3px var(--blue)}
 .legend{display:flex;gap:16px;font-size:14px;color:var(--muted);margin-top:4px}
 .legend span::before{content:"";display:inline-block;width:12px;height:12px;border-radius:3px;margin-inline-end:6px;vertical-align:-1px;border:2px solid var(--rule)}
 .legend .l-done::before{background:var(--green);border-color:var(--green)}
+.legend .l-cur::before{border-color:var(--blue);box-shadow:0 0 0 2px var(--blue)}
+.mapcount{font-weight:700;margin:4px 0 2px}
 
 /* חלון אישור */
 .modal{position:fixed;inset:0;background:rgba(5,12,26,.65);z-index:20;display:grid;place-items:center;padding:16px}
@@ -184,8 +189,9 @@ button,input,select,textarea{font:inherit;color:inherit}
 
 <div class="sheet" id="mapSheet" hidden>
   <div class="panel" role="dialog" aria-modal="true" aria-labelledby="mapTitle">
-    <h3 id="mapTitle">מפת השאלות</h3>
-    <div class="legend"><span class="l-done">נענתה</span><span>טרם נענתה</span></div>
+    <h3 id="mapTitle">כל השאלות</h3>
+    <p class="mapcount" id="mapCount"></p>
+    <div class="legend"><span class="l-done">נענתה</span><span>טרם נענתה</span><span class="l-cur">השאלה הנוכחית</span></div>
     <div id="mapBody"></div>
     <button class="btn ghost wide" style="margin-top:18px" onclick="closeMap()">חזרה לשאלה</button>
   </div>
@@ -386,7 +392,7 @@ function startExam(){
   </div>
   <nav class="bottombar"><div class="in">
     <button class="btn ghost" id="prevBtn" onclick="go(-1)">הקודמת</button>
-    <button class="btn navbtn" onclick="openMap()" aria-label="מפת השאלות">☰</button>
+    <button class="btn navbtn" onclick="openMap()"><span class="gridic" aria-hidden="true"><i></i><i></i><i></i><i></i></span>כל השאלות</button>
     <button class="btn" id="nextBtn" onclick="go(1)">הבאה</button>
   </div></nav>`;
   startClock();
@@ -464,6 +470,10 @@ function openMap(){
   });
   html += `<button class="btn go wide" style="margin-top:18px" onclick="closeMap();openConfirm()">הגשת המבחן</button>`;
   $("#mapBody").innerHTML = html;
+  const done = S.flat.filter(isAnswered).length;
+  $("#mapCount").textContent = done === S.flat.length
+    ? `ענית על כל ${S.flat.length} השאלות. לחיצה על מספר פותחת את השאלה.`
+    : `ענית על ${done} מתוך ${S.flat.length} שאלות. לחיצה על מספר פותחת את השאלה.`;
   $("#mapSheet").hidden = false;
 }
 function closeMap(){ $("#mapSheet").hidden = true; }
@@ -507,7 +517,7 @@ async function doSubmit(auto){
   if (auto){ closeMap(); }
   for (let attempt = 1; attempt <= 4; attempt++){
     try {
-      const r = await api({ action:"submit", id:S.session.id, password:S.session.password, token:S.session.token||"", answers:S.answers, tabOut:S.outLog.length, outLog:S.outLog });
+      const r = await api({ action:"submit", id:S.session.id, password:S.session.password, token:S.session.token||"", first:S.session.first, last:S.session.last, cls:S.session.cls, teacher:S.session.teacher, answers:S.answers, tabOut:S.outLog.length, outLog:S.outLog });
       if (!r.ok) throw Object.assign(new Error(r.error), {server:true});
       clearInterval(S.timer); clearLocal(); closeConfirm();
       return renderDone(r, auto);
