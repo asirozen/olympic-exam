@@ -182,6 +182,11 @@ button,input,select,textarea{font:inherit;color:inherit}
 .logo img{width:78%;height:78%;object-fit:contain;display:block}
 .brand{display:flex;align-items:center;gap:12px;margin-bottom:16px;color:#C9D3E6;font-weight:700;font-size:16px}
 .tb-who{display:flex;align-items:center;gap:10px;min-width:0}
+.wm{position:fixed;inset:0;pointer-events:none;z-index:4;background-repeat:repeat}
+#qArea,.qcard,.opt{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+.open-in{-webkit-user-select:text;user-select:text}
+#outModal.last .panel{border-top-width:12px}
+#outModal.last h3{font-size:30px}
 @media (max-width:420px){.row2{grid-template-columns:1fr}.qtext{font-size:19px}.card,.qcard{padding:18px 16px}}
 </style>
 </head>
@@ -235,33 +240,31 @@ const SCHOOL_NAME = "תיכון אחד העם";
 const logo = (px) => `<span class="logo" style="width:${px}px;height:${px}px"><img src="${LOGO}" alt="סמל ${SCHOOL_NAME}"></span>`;
 const brand = (px=64) => `<div class="brand">${logo(px)}<span>${SCHOOL_NAME}</span></div>`;
 const DEMO = !/^https:\/\/script\.google(usercontent)?\.com\//.test(CONFIG.API_URL);
-const S = { session:null, exam:null, flat:[], answers:{}, idx:0, deadline:0, offset:0, tabOut:0, outLog:[], outSince:0, outHidden:false, timer:null, submitting:false };
+const S = { session:null, exam:null, flat:[], answers:{}, idx:0, deadline:0, offset:0, tabOut:0, outLog:[], outSince:0, outHidden:false, strikes:0, shots:0, rules:{maxStrikes:3, strikeSec:10}, hideTimer:null, timer:null, submitting:false };
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const partName = i => ["חלק א'","חלק ב'","חלק ג'","חלק ד'"][i] || "";
 
 /* ---------- תקשורת עם השרת ---------- */
-async function api(payload){
+async function api(payload, keepalive){
   if (DEMO) return demoApi(payload);
-  const res = await fetch(CONFIG.API_URL, { method:"POST", body: JSON.stringify(payload) });
+  // keepalive: הבקשה נשלחת גם אם הדף ברקע או נסגר (להגשה אוטומטית)
+  const res = await fetch(CONFIG.API_URL, { method:"POST", body: JSON.stringify(payload), keepalive: !!keepalive });
   if (!res.ok) throw new Error("net");
   return res.json();
 }
 
-/* ---------- בדיקת ת.ז ישראלית ---------- */
-function validId(raw){
-  let id = String(raw||"").replace(/\D/g,"");
-  if (id.length < 5 || id.length > 9) return false;
-  id = id.padStart(9,"0");
-  let sum = 0;
-  for (let i=0;i<9;i++){ let n = +id[i] * (i%2+1); if (n>9) n-=9; sum+=n; }
-  return sum % 10 === 0;
-}
+/* ---------- מזהה תלמיד: שם פרטי + שם משפחה + כיתה (זהה לחישוב בשרת) ---------- */
+const normName = s => String(s||"").toLowerCase()
+  .replace(/[\u0591-\u05C7]/g,"")
+  .replace(/[ךםןףץ]/g, c => ({"ך":"כ","ם":"מ","ן":"נ","ף":"פ","ץ":"צ"}[c]))
+  .replace(/[\s"'`״׳.,\-–—_()]/g,"");
+const studentKey = (f,l,c) => normName(f) + "|" + normName(l) + "|" + normName(c);
 
 /* ---------- שמירה מקומית (רענון / טלפון נכבה) ---------- */
 const storeKey = () => "olyExam_" + (S.session?.id || "");
 function saveLocal(){
-  try { localStorage.setItem(storeKey(), JSON.stringify({answers:S.answers, idx:S.idx, outLog:S.outLog})); } catch(e){}
+  try { localStorage.setItem(storeKey(), JSON.stringify({answers:S.answers, idx:S.idx, outLog:S.outLog, strikes:S.strikes, shots:S.shots})); } catch(e){}
 }
 function loadLocal(){
   try { return JSON.parse(localStorage.getItem(storeKey()) || "null"); } catch(e){ return null; }
@@ -285,27 +288,23 @@ function renderLogin(error){
       <p class="subline">${esc(CONFIG.SCHOOL_LINE)}</p>
     </header>
     <form class="card" id="loginForm" novalidate>
-      ${DEMO ? `<div class="demo">מצב תצוגה: עדיין לא חובר שרת, התשובות לא נשמרות. כל ת.ז תקינה וכל סיסמה יעבדו.</div>` : ""}
+      ${DEMO ? `<div class="demo">מצב תצוגה: עדיין לא חובר שרת, התשובות לא נשמרות. כל סיסמה תעבוד.</div>` : ""}
       ${error ? `<div class="err" role="alert">${esc(error)}</div>` : ""}
-      <div class="field">
-        <label for="id">מספר תעודת זהות</label>
-        <input id="id" inputmode="numeric" autocomplete="off" maxlength="9" value="${esc(p.id||"")}" required>
-        <div class="hint">9 ספרות, כולל ספרת הביקורת</div>
-      </div>
-      <div class="field">
-        <label for="pw">סיסמת המבחן</label>
-        <input id="pw" type="text" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" dir="ltr" required>
-        <div class="hint">המורה ייתן לכם את הסיסמה בתחילת השיעור</div>
-      </div>
       <div class="row2">
-        <div class="field"><label for="first">שם פרטי</label><input id="first" value="${esc(p.first||"")}" required></div>
-        <div class="field"><label for="last">שם משפחה</label><input id="last" value="${esc(p.last||"")}" required></div>
+        <div class="field"><label for="first">שם פרטי</label><input id="first" autocomplete="given-name" value="${esc(p.first||"")}" required></div>
+        <div class="field"><label for="last">שם משפחה</label><input id="last" autocomplete="family-name" value="${esc(p.last||"")}" required></div>
       </div>
+      <div class="hint" style="margin:-6px 0 14px">כתבו את השם המלא שלכם, כפי שהוא רשום בבית הספר.</div>
       <div class="row2">
         <div class="field"><label for="cls">כיתה</label>
           <select id="cls" required><option value="">בחרו כיתה</option>${opt(CONFIG.CLASSES)}</select></div>
         <div class="field"><label for="teacher">מורה</label>
           <select id="teacher" required><option value="">בחרו מורה</option>${opt(CONFIG.TEACHERS)}</select></div>
+      </div>
+      <div class="field">
+        <label for="pw">סיסמת המבחן</label>
+        <input id="pw" type="text" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" dir="ltr" required>
+        <div class="hint">המורה ייתן לכם את הסיסמה בתחילת השיעור</div>
       </div>
       <button class="btn wide" id="loginBtn" type="submit">כניסה למבחן</button>
     </form>
@@ -313,18 +312,20 @@ function renderLogin(error){
   if (p.cls) $("#cls").value = p.cls;
   if (p.teacher) $("#teacher").value = p.teacher;
   $("#loginForm").addEventListener("submit", onLogin);
+  if (error) $(".err").scrollIntoView({ block:"center" });
 }
 
 async function onLogin(e){
   e.preventDefault();
   const v = id => $("#"+id).value.trim();
-  const sess = { id:v("id").replace(/\D/g,"").padStart(9,"0"), password:v("pw"), first:v("first"), last:v("last"), cls:v("cls"), teacher:v("teacher") };
+  const sess = { password:v("pw"), first:v("first"), last:v("last"), cls:v("cls"), teacher:v("teacher") };
+  sess.id = studentKey(sess.first, sess.last, sess.cls);
   S.session = sess;
-  if (!validId(v("id"))) return renderLogin("מספר ת.ז אינו תקין. בדקו שהקלדתם את כל 9 הספרות.");
+  if (!normName(sess.first) || !normName(sess.last)) return renderLogin("מלאו שם פרטי ושם משפחה.");
+  if (!sess.cls || !sess.teacher) return renderLogin("בחרו כיתה ומורה.");
   sess.token = getToken(sess.id);
   if (!sess.password && !sess.token) return renderLogin("הקלידו את סיסמת המבחן.");
-  if (!sess.first || !sess.last) return renderLogin("מלאו שם פרטי ושם משפחה.");
-  if (!sess.cls || !sess.teacher) return renderLogin("בחרו כיתה ומורה.");
+
 
   const btn = $("#loginBtn");
   btn.disabled = true; btn.innerHTML = `<span class="spinner"></span> נכנסים...`;
@@ -337,9 +338,13 @@ async function onLogin(e){
     S.deadline = r.startedAt + r.durationMin*60000;
     S.flat = r.parts.flatMap((p,pi) => p.questions.map((q,qi) => ({...q, pi, qi, partTitle:p.title, instructions:p.instructions, points:p.points, nInPart:p.questions.length})));
     const local = loadLocal();
-    if (local){ S.answers = local.answers || {}; S.idx = Math.min(local.idx||0, S.flat.length-1); S.outLog = local.outLog||[]; S.tabOut = S.outLog.length; }
+    if (r.rules) S.rules = r.rules;
+    if (local){ S.answers = local.answers || {}; S.idx = Math.min(local.idx||0, S.flat.length-1); S.outLog = local.outLog||[]; S.tabOut = S.outLog.length; S.shots = local.shots||0; }
     else { S.answers = {}; S.idx = 0; }
-    local ? startExam() : renderIntro();
+    // העבירות נשמרות גם בשרת: החלפת מכשיר או ניקוי הדפדפן לא מאפסים אותן
+    S.strikes = Math.max(local ? (local.strikes||0) : 0, r.strikes||0);
+    local || r.strikes ? startExam() : renderIntro();
+    if (S.strikes >= S.rules.maxStrikes) doSubmit("exits");
   } catch(err){
     renderLogin("אין חיבור לשרת. בדקו את האינטרנט ונסו שוב.");
   }
@@ -364,8 +369,8 @@ function renderIntro(){
         ${ex.parts.map(p=>`<li><b>${esc(p.title)}</b>${esc(p.instructions)}</li>`).join("")}
       </ul>
       <p><b>זמן המבחן: ${ex.durationMin} דקות.</b> השעון כבר רץ. כשהזמן נגמר, המבחן מוגש אוטומטית.</p>
-      <p class="rule"><b>אסור לצאת מדף המבחן.</b> כל מעבר ללשונית, לחלון או לאפליקציה אחרת נרשם יחד עם משך הזמן, ומדווח למורה.</p>
-      <p class="hint">התשובות נשמרות במכשיר תוך כדי. אם הדף נסגר, היכנסו שוב עם אותה ת.ז ותמשיכו מאותה נקודה.</p>
+      <p class="rule"><b>אסור לצאת מדף המבחן.</b> כל מעבר ללשונית, לחלון או לאפליקציה אחרת נרשם ומדווח למורה. יציאה של יותר מ-${S.rules.strikeSec} שניות נחשבת עבירה. <b>אחרי ${S.rules.maxStrikes} עבירות המבחן מוגש אוטומטית ונפסל.</b> גם צילום מסך נחשב עבירה.</p>
+      <p class="hint">התשובות נשמרות במכשיר תוך כדי. אם הדף נסגר, היכנסו שוב עם אותם פרטים בדיוק ותמשיכו מאותה נקודה.</p>
       <button class="btn go wide" onclick="startExam()">התחלת המבחן</button>
     </section>
   </div>`;
@@ -391,6 +396,7 @@ function startExam(){
   <div class="wrap" style="padding-top:0">
     <div id="qArea"></div>
   </div>
+  <div class="wm" aria-hidden="true" style="background-image:${watermark()}"></div>
   <nav class="bottombar"><div class="in">
     <button class="btn ghost" id="prevBtn" onclick="go(-1)">הקודמת</button>
     <button class="btn navbtn" onclick="openMap()"><span class="gridic" aria-hidden="true"><i></i><i></i><i></i><i></i></span>כל השאלות</button>
@@ -490,7 +496,7 @@ function startClock(){
     if (left <= 0){
       clearInterval(S.timer);
       if (el) el.textContent = "00:00";
-      if (!S.submitting) doSubmit(true);
+      if (!S.submitting) doSubmit("time");
       return;
     }
     const m = Math.floor(left/60000), s = Math.floor(left%60000/1000);
@@ -501,6 +507,12 @@ function startClock(){
 
 /* ---------- הגשה ---------- */
 function openConfirm(){
+  if (S.locked){
+    $("#cfTitle").textContent = "המבחן נפסל";
+    $("#cfText").innerHTML = "המבחן ננעל בגלל יציאות מדף המבחן ויש להגיש אותו. אם ההגשה נכשלה, בדקו את החיבור ונסו שוב.";
+    $("#confirmModal .btn.ghost").hidden = true;
+    $("#confirmModal").hidden = false; return;
+  }
   const missing = S.flat.filter(q=>!isAnswered(q)).length;
   $("#cfText").innerHTML = missing
     ? `נשארו <b>${missing}</b> שאלות בלי תשובה. שאלה בלי תשובה מקבלת 0 נקודות. אחרי ההגשה אי אפשר לחזור למבחן.`
@@ -510,18 +522,23 @@ function openConfirm(){
 }
 function closeConfirm(){ $("#confirmModal").hidden = true; }
 
-async function doSubmit(auto){
+async function doSubmit(reason){
+  // reason: ריק = הגשה רגילה, "time" = נגמר הזמן, "exits" = עבירות יציאה
   if (S.submitting) return;
+  if (reason === "exits") S.locked = true;          // אחרי פסילה אין חזרה למבחן
+  if (S.locked) reason = "exits";
+  const auto = !!reason;
   S.submitting = true;
+  clearTimeout(S.hideTimer); closeOut();
   const btn = $("#cfGo");
   if (btn){ btn.disabled = true; btn.innerHTML = `<span class="spinner"></span> מגישים...`; }
   if (auto){ closeMap(); }
   for (let attempt = 1; attempt <= 4; attempt++){
     try {
-      const r = await api({ action:"submit", id:S.session.id, password:S.session.password, token:S.session.token||"", first:S.session.first, last:S.session.last, cls:S.session.cls, teacher:S.session.teacher, answers:S.answers, tabOut:S.outLog.length, outLog:S.outLog });
+      const r = await api({ action:"submit", id:S.session.id, password:S.session.password, token:S.session.token||"", first:S.session.first, last:S.session.last, cls:S.session.cls, teacher:S.session.teacher, answers:S.answers, tabOut:S.outLog.length, outLog:S.outLog, reason:reason||"", strikes:S.strikes, shots:S.shots }, true);
       if (!r.ok) throw Object.assign(new Error(r.error), {server:true});
       clearInterval(S.timer); clearLocal(); closeConfirm();
-      return renderDone(r, auto);
+      return renderDone(r, reason);
     } catch(err){
       if (err.server || attempt === 4){
         S.submitting = false;
@@ -535,16 +552,29 @@ async function doSubmit(auto){
   }
 }
 
-function showToast(msg){
+function showToast(msg, ok){
   const t = $("#toast"); t.textContent = msg; t.hidden = false;
+  t.style.background = ok ? "#0B7A3E" : "";
   clearTimeout(showToast._t); showToast._t = setTimeout(()=>t.hidden=true, 7000);
 }
 
 /* =================================================================== */
 /* מסך סיום                                                            */
 /* =================================================================== */
-function renderDone(r, auto){
+function renderDone(r, reason){
   let medal = "plain", inner = "✓", line = "";
+  if (reason === "exits" || r.disqualified){
+    $("#app").innerHTML = `
+    <div class="wrap done">
+      <div style="display:flex;justify-content:center;margin:-16px 0 26px">${brand(56)}</div>
+      <div class="medal plain" style="background:#C21F3A;color:#fff" aria-hidden="true">!</div>
+      <h2>המבחן הוגש אוטומטית</h2>
+      <p>יצאת מדף המבחן ${S.strikes} פעמים לזמן ממושך, ולכן המבחן הוגש וסומן כנפסל.</p>
+      <p>המורה יקבל דיווח מלא.</p>
+      <button class="btn go" style="margin-top:28px;min-width:240px" onclick="nextStudent()">כניסה של תלמיד/ה חדש/ה</button>
+    </div>`;
+    return;
+  }
   if (r.showScore && typeof r.score === "number"){
     medal = r.score >= 90 ? "" : r.score >= 75 ? "silver" : r.score >= 55 ? "bronze" : "plain";
     inner = r.score;
@@ -554,38 +584,76 @@ function renderDone(r, auto){
   <div class="wrap done">
     <div style="display:flex;justify-content:center;margin:-16px 0 26px">${brand(56)}</div>
     <div class="medal ${medal}" aria-hidden="true">${inner}</div>
-    <h2>${auto ? "הזמן נגמר, המבחן הוגש" : "המבחן הוגש"}</h2>
+    <h2>${reason === "time" ? "הזמן נגמר, המבחן הוגש" : "המבחן הוגש"}</h2>
     <p>${esc(r.message || "")}</p>
     ${r.showScore && typeof r.score === "number" ? `<p>הציון שלך: <b style="color:#fff">${r.score}</b></p>` : `<p>הציון יפורסם על ידי המורה.</p>`}
     ${line ? `<p class="hint" style="color:#9FB0CC">${esc(line)}</p>` : ""}
     <div class="lanes" aria-hidden="true" style="max-width:260px;margin:28px auto 0"><i></i><i></i><i></i><i></i><i></i></div>
-    <p style="margin-top:24px">אפשר לסגור את הדף.</p>
+    <button class="btn go" style="margin-top:28px;min-width:240px" onclick="nextStudent()">כניסה של תלמיד/ה חדש/ה</button>
+    <p class="small" style="margin-top:12px">או לסגור את הדף.</p>
   </div>`;
 }
 
+/* ---------- תלמיד הבא באותו מחשב: טעינה נקייה של הדף, בלי שום פרט של התלמיד הקודם ---------- */
+function nextStudent(){
+  clearInterval(S.timer);
+  S.exam = null;   // מבטל את אזהרת "לצאת מהדף?"
+  location.replace(location.pathname + location.search);
+}
+
 /* ---------- מעקב יציאה מהמסך ---------- */
-const examActive = () => S.exam && !S.submitting && !!document.getElementById("qArea");
+const examActive = () => S.exam && !S.submitting && !S.locked && !!document.getElementById("qArea");
 function markOut(hidden){
   if (!examActive()) return;
   if (!S.outSince) S.outSince = Date.now();
   if (hidden) S.outHidden = true;
+  // באזהרה האחרונה: אם התלמיד לא חוזר בזמן — מגישים גם בלי שיחזור (עובד במחשב)
+  if (S.strikes === S.rules.maxStrikes - 1 && !S.hideTimer){
+    S.hideTimer = setTimeout(() => {
+      S.hideTimer = null;
+      if (!S.outSince || !examActive()) return;
+      const secs = Math.round((Date.now() - S.outSince) / 1000);
+      S.outLog.push(secs); S.tabOut = S.outLog.length;
+      addStrike();
+    }, S.rules.strikeSec * 1000 + 600);
+  }
 }
 function markBack(){
   if (!S.outSince || document.hidden || !document.hasFocus()) return;
+  clearTimeout(S.hideTimer); S.hideTimer = null;
   const secs = Math.round((Date.now() - S.outSince) / 1000);
   const counted = S.outHidden || secs >= 2;   // מעבר קצרצר של פוקוס (פחות מ-2 שנ') לא נספר
   S.outSince = 0; S.outHidden = false;
   if (!counted || !examActive()) return;
-  S.outLog.push(secs); S.tabOut = S.outLog.length; saveLocal();
-  showOutWarning(secs);
+  S.outLog.push(secs); S.tabOut = S.outLog.length;
+  if (secs > S.rules.strikeSec) return addStrike(secs);
+  saveLocal(); pingExit();
+  showOutWarning(secs, false);
+}
+function addStrike(secs, label){
+  S.strikes++;
+  saveLocal(); pingExit();
+  if (S.strikes >= S.rules.maxStrikes) return doSubmit("exits");
+  showOutWarning(secs, true, label);
+}
+function pingExit(){
+  api({ action:"exit", first:S.session.first, last:S.session.last, cls:S.session.cls, token:S.session.token||"", strikes:S.strikes, exits:S.outLog.length, shots:S.shots }, true).catch(()=>{});
 }
 document.addEventListener("visibilitychange", () => document.hidden ? markOut(true) : markBack());
 window.addEventListener("blur", () => markOut(false));
 window.addEventListener("focus", markBack);
 
-function showOutWarning(secs){
-  const n = S.outLog.length;
-  $("#outText").innerHTML = `זו היציאה ה-<b>${n}</b> שלך מדף המבחן (${secs} שניות מחוץ לדף).<br>היציאה נרשמה ותדווח למורה יחד עם המבחן.`;
+function showOutWarning(secs, strike, label){
+  const max = S.rules.maxStrikes, left = max - S.strikes;
+  const last = strike && left === 1;
+  $("#outTitle").textContent = last ? "אזהרה אחרונה" : strike ? "עבירה נרשמה" : "יצאת מדף המבחן";
+  const what = label || `יצאת מדף המבחן ל-${secs} שניות`;
+  $("#outText").innerHTML = last
+    ? `${what}. זו עבירה מספר <b>${S.strikes}</b> מתוך ${max}.<br><b>ביציאה הבאה של יותר מ-${S.rules.strikeSec} שניות המבחן יוגש אוטומטית ויסומן כנפסל.</b>`
+    : strike
+    ? `${what}. זו עבירה מספר <b>${S.strikes}</b> מתוך ${max}.<br>אחרי ${max} עבירות המבחן מוגש אוטומטית ונפסל. העבירה מדווחת למורה.`
+    : `${what}. היציאה נרשמה ותדווח למורה.<br>יציאה של יותר מ-${S.rules.strikeSec} שניות נחשבת עבירה${S.strikes ? ` (עד עכשיו: ${S.strikes} מתוך ${max})` : ""}.`;
+  $("#outModal").classList.toggle("last", last);
   $("#outModal").hidden = false;
   $("#outOk").focus();
 }
@@ -596,6 +664,26 @@ window.addEventListener("beforeunload", e => {
 document.addEventListener("keydown", e => {
   if (e.key === "Escape"){ closeMap(); closeConfirm(); closeOut(); }
 });
+
+/* ---------- הרתעה מצילום והעתקה ---------- */
+["copy","cut","contextmenu","dragstart","selectstart"].forEach(ev => document.addEventListener(ev, e => {
+  if (!examActive()) return;
+  if (e.target.closest && e.target.closest(".open-in")) return;   // בשדה ההשלמה מותר לסמן טקסט
+  e.preventDefault();
+}));
+document.addEventListener("keyup", e => {
+  if (!examActive()) return;
+  if (e.key === "PrintScreen" || e.code === "PrintScreen"){
+    try { navigator.clipboard.writeText(" "); } catch(_){}
+    S.shots++;
+    addStrike(0, "זוהה ניסיון צילום מסך");
+  }
+});
+function watermark(){
+  const t = `${S.session.first} ${S.session.last} | ${S.session.cls} | ${new Date().toLocaleDateString("he-IL")}`.replace(/[<>&'"]/g,"");
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="320" height="190"><text x="160" y="105" text-anchor="middle" transform="rotate(-24 160 95)" font-family="Arial" font-size="17" font-weight="700" fill="#6E7C99" fill-opacity="0.2">' + t + '</text></svg>';
+  return "url('data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg).replace(/'/g,"%27") + "')";
+}
 
 
 /* =================================================================== */
@@ -641,7 +729,9 @@ async function adminCall(extra){
       else showToast(r.error);
       return false;
     }
-    A.data = r; renderAdmin(); return true;
+    A.data = r; renderAdmin();
+    if (r.notice) showToast(r.notice, true);
+    return true;
   } catch(e){
     A.busy = false;
     if (!A.data) renderAdminLogin("אין חיבור לשרת. בדקו את האינטרנט ונסו שוב.");
@@ -652,7 +742,7 @@ async function adminCall(extra){
 
 function renderAdmin(){
   const d = A.data;
-  const items = d.inProgress.map(p => `<li><span>${esc(p.name)}, ${esc(p.cls)}</span>
+  const items = d.inProgress.map(p => `<li><span>${esc(p.name)}, ${esc(p.cls)}${p.strikes ? ` <b class="late">(${p.strikes} עבירות)</b>` : ""}</span>
       <span class="${p.minutes > d.durationMin ? "late" : ""}">${p.minutes} דק'</span></li>`).join("");
   $("#app").innerHTML = `
   <div class="wrap adm">
@@ -691,12 +781,22 @@ function renderAdmin(){
       <button class="btn ghost" style="background:var(--paper)" onclick="adminCall({op:'status'})">רענון</button>
       <button class="btn ghost" style="background:var(--paper)" onclick="adminLogout()">יציאה</button>
     </section>
+    <section class="card" style="margin-top:14px">
+      <b>דו"ח תוצאות למורים</b>
+      <p class="hint" style="margin:4px 0 12px">כל מורה מקבל במייל את התלמידים שלו, וקובץ Excel של כל השכבה. את רשימת המורים והמיילים עורכים בגיליון "מורים".</p>
+      <button class="btn wide" id="repBtn" onclick="sendReport()">שליחת דו"ח למורים</button>
+    </section>
     <p class="small">סה"כ הגשות מאז ההקמה: ${d.submittedTotal}. הנתונים מתרעננים לבד כל 20 שניות.</p>
   </div>`;
   clearInterval(A.timer);
   A.timer = setInterval(() => { if (!document.hidden) adminCall({op:"status"}); }, 20000);
 }
 
+function sendReport(){
+  if (!confirm(`לשלוח עכשיו את תוצאות ${A.data.submittedTotal} התלמידים לכל המורים המסומנים?`)) return;
+  const b = $("#repBtn"); b.disabled = true; b.innerHTML = `<span class="spinner"></span> שולחים...`;
+  adminCall({op:"sendReport"});
+}
 function savePw(){
   const v = $("#newPw").value.trim();
   if (v.length < 3) return showToast("הסיסמה צריכה להיות לפחות 3 תווים.");
@@ -742,9 +842,10 @@ function demoApi(p){
       const D = demoApi.state = demoApi.state || { open:false, password:"olympic26" };
       if (p.op === "setOpen") D.open = p.value;
       if (p.op === "setPassword") D.password = p.value;
+      D.notice = p.op === "sendReport" ? "הדו\"ח נשלח ל-8 מורים (64 תלמידים בדו\"ח)." : "";
       res({ ok:true, open:D.open, password:D.password, durationMin:45, startedToday:27, submittedToday:19, submittedTotal:64,
         inProgress:[{name:"שירה אברהם",cls:"י'3",minutes:47},{name:"נועה כהן",cls:"י'3",minutes:31},{name:"איתמר לוי",cls:"י'3",minutes:28}],
-        sheetUrl:"#", xlsxUrl:"#" });
+        sheetUrl:"#", xlsxUrl:"#", notice:D.notice });
     } else {
       res({ ok:true, message:"במצב תצוגה התשובות לא נשמרות.", showScore:true, score:92, pendingReview:true });
     }
