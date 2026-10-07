@@ -288,7 +288,7 @@ function renderLogin(error){
       <p class="subline">${esc(CONFIG.SCHOOL_LINE)}</p>
     </header>
     <form class="card" id="loginForm" novalidate>
-      ${DEMO ? `<div class="demo">מצב תצוגה: עדיין לא חובר שרת, התשובות לא נשמרות. כל סיסמה תעבוד.</div>` : ""}
+      ${DEMO ? `<div class="demo">מצב תצוגה: עדיין לא חובר שרת, התשובות לא נשמרות. כל קוד יעבוד.</div>` : ""}
       ${error ? `<div class="err" role="alert">${esc(error)}</div>` : ""}
       <div class="row2">
         <div class="field"><label for="first">שם פרטי</label><input id="first" autocomplete="given-name" value="${esc(p.first||"")}" required></div>
@@ -302,9 +302,9 @@ function renderLogin(error){
           <select id="teacher" required><option value="">בחרו מורה</option>${opt(CONFIG.TEACHERS)}</select></div>
       </div>
       <div class="field">
-        <label for="pw">סיסמת המבחן</label>
+        <label for="pw">קוד המבחן</label>
         <input id="pw" type="text" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" dir="ltr" required>
-        <div class="hint">המורה ייתן לכם את הסיסמה בתחילת השיעור</div>
+        <div class="hint">המורה ייתן לכם את הקוד בתחילת השיעור</div>
       </div>
       <button class="btn wide" id="loginBtn" type="submit">כניסה למבחן</button>
     </form>
@@ -324,7 +324,7 @@ async function onLogin(e){
   if (!normName(sess.first) || !normName(sess.last)) return renderLogin("מלאו שם פרטי ושם משפחה.");
   if (!sess.cls || !sess.teacher) return renderLogin("בחרו כיתה ומורה.");
   sess.token = getToken(sess.id);
-  if (!sess.password && !sess.token) return renderLogin("הקלידו את סיסמת המבחן.");
+  if (!sess.password && !sess.token) return renderLogin("הקלידו את קוד המבחן.");
 
 
   const btn = $("#loginBtn");
@@ -699,10 +699,10 @@ function renderAdminLogin(err){
     ${brand(52)}
     <h1>לוח בקרה למורה</h1>
     <form class="card" id="admForm">
-      ${DEMO ? `<div class="demo">מצב תצוגה: השרת לא מחובר. כל סיסמה תעבוד.</div>` : ""}
+      ${DEMO ? `<div class="demo">מצב תצוגה: השרת לא מחובר. כל קוד יעבוד.</div>` : ""}
       ${err ? `<div class="err" role="alert">${esc(err)}</div>` : ""}
-      <div class="field"><label for="apw">סיסמת מורה</label>
-        <input id="apw" type="password" autocomplete="current-password" required></div>
+      <div class="field"><label for="apw">קוד מורה</label>
+        <input id="apw" type="text" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" dir="ltr" style="-webkit-text-security:disc;text-security:disc" required></div>
       <label style="display:flex;gap:8px;align-items:center;margin-bottom:14px;font-weight:600">
         <input type="checkbox" id="aremember" checked style="width:20px;height:20px"> לזכור במכשיר הזה</label>
       <button class="btn wide" id="admBtn" type="submit">כניסה</button>
